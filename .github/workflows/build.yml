@@ -1,0 +1,123 @@
+name: Build
+
+on: 
+  schedule:
+    - cron:  '0 13 * * *' # every day 13:00 UTC (05:00 PST)
+
+  push:
+    branches: [ master ]
+
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        language: [ ENGLISH ]
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v1
+     
+    - name: Restore NuGet Packages
+      run: nuget restore BnsPerformanceFix.sln
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1
+      
+    - name: Build exe
+      run: msbuild BnsPerformanceFix.sln /p:Configuration=Release
+    
+    - name: Get Latest Patch
+      id: get-patch
+      run: |
+        $version = 166
+        while ($true) {
+          try {
+            $test = $version + 1
+            Invoke-WebRequest -Method Head -Uri "http://live.patcher.bladeandsoul.com/BnS/${test}/Patch/FileInfoMap_BnS_${test}.dat.zip"
+            $version = $test
+          } catch {
+            break
+          }
+        }
+        Write-Output "::set-output name=patch::${version}"
+    
+    - name: Cache 32-bit
+      id: cache-32
+      uses: actions/cache@v2
+      with:
+        path: local.dat
+        key: local-${{ steps.get-patch.outputs.patch }}-${{ matrix.language }}
+    
+    - name: Cache 64-bit
+      id: cache-64
+      uses: actions/cache@v2
+      with:
+        path: local64.dat
+        key: local64-${{ steps.get-patch.outputs.patch }}-${{ matrix.language }}
+
+    - name: Prep for download
+      id: download
+      if: ${{ steps.cache-32.outputs.cache-hit != 'true' || steps.cache-64.outputs.cache-hit != 'true' }}
+      run: |
+        Install-Module -Name 7Zip4Powershell -Force
+        Import-Module -Name 7Zip4Powershell -Global
+        
+    - name: Download 32-bit
+      if: steps.cache-32.outputs.cache-hit != 'true'
+      run: |
+        $version = '${{ steps.get-patch.outputs.patch }}'
+        $language = '${{ matrix.language }}'
+        Invoke-WebRequest -OutFile local.dat.lzma -Uri "http://live.patcher.bladeandsoul.com/BnS/${version}/Patch/Zip/contents/Local/NCWEST/${language}/data/local.dat.zip"
+        Expand-7Zip -ArchiveFileName local.dat.lzma -TargetPath .
+        Rename-Item -Path local.dat.tar -NewName local.dat
+        
+    - name: Download 64-bit
+      if: steps.cache-64.outputs.cache-hit != 'true'
+      run: |
+        $version = '${{ steps.get-patch.outputs.patch }}'
+        $language = '${{ matrix.language }}'
+        Invoke-WebRequest -OutFile local64.dat.lzma -Uri "http://live.patcher.bladeandsoul.com/BnS/${version}/Patch/Zip/contents/Local/NCWEST/${language}/data/local64.dat.zip"
+        Expand-7Zip -ArchiveFileName local64.dat.lzma -TargetPath .
+        Rename-Item -Path local64.dat.tar -NewName local64.dat
+       
+    - name: Build dat files
+      id: datfile
+      if: ${{ github.event_name != 'schedule' || steps.download.outcome != 'skipped' }}
+      run: |
+        $output = New-Item -ItemType Directory -Path 'release' -Force
+        Get-ChildItem -Path 'filters' -Filter '*.txt' | ForEach-Object {
+          $filter = [io.path]::GetFileNameWithoutExtension($_.Name)
+          $name = "${filter}-v${{ github.run_number }}-${{ matrix.language }}"
+          $temp = New-Item -ItemType Directory -Path $name -Force
+
+          .\bin\Release\BnsPerformanceFix.exe --filter $_.FullName --outfile (Join-Path $temp 'local.dat') local.dat
+          .\bin\Release\BnsPerformanceFix.exe --filter $_.FullName --outfile (Join-Path $temp 'local64.dat') local64.dat
+
+          Compress-Archive -Path (Join-Path $temp '*.dat') -DestinationPath (Join-Path $output $name)
+        }
+
+    - name: Zip
+      run: Compress-Archive -Path "./bin/Release/*" -DestinationPath BnsPerformanceFix.zip 
+
+    - name: Release
+      if: ${{ github.ref == 'refs/heads/master' && steps.datfile.outcome != 'skipped' }}
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }} (patch ${{ steps.get-patch.outputs.patch }})
+        files: |
+          BnsPerformanceFix.zip
+          release/*.zip
+        draft: false
+        prerelease: false
