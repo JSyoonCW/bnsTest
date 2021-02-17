@@ -255,6 +255,7 @@ class SubArch:
         self.SizeDecompressed = None #2byte
         self.DataDecompressed = None
         self.FieldLookupCount = None #4byte
+        self.DataOffset = None
         
         #class list
         self.Field = []
@@ -273,6 +274,15 @@ class SubArch:
         self.FieldLookupCount = bf.read(4)
         self.Field = FieldTable()
         self.Lookup = Lookup()
+        
+        mbf = BytesIO(self.DataDecompressed)
+        self.DataOffset = bf.read(2)
+        for i in range(1,struct.unpack('i',self.FieldLookupCount)):
+            mbf.seek(struct.unpack('h',self.DataOffset))
+            
+            self.Field.append(FieldTable())
+            self.Field.dec_FieldTable(mbf)
+            #Todo
         return
     def get_bytes(self):
         return
