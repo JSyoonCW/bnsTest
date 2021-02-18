@@ -116,8 +116,8 @@ class Lists:
         
         endpos = bf.tell()
         
-        if (startpos + struct.unpack('i', self.size) != endpos):
-            bf.seek(startpos + struct.unpack('i', self.size))
+        if (startpos + struct.unpack('i', self.size)[0] != endpos):
+            bf.seek(startpos + struct.unpack('i', self.size)[0])
         #write 시 size 재계산
     
     def get_bytes(self):
@@ -141,8 +141,8 @@ class Collection:
     def dec_collection(self, bf):
         self.compressed = bf.read(1)
         
-        if struct.unpack('?',self.compressed):
-            if self.compressed>1:
+        if struct.unpack('?',self.compressed)[0]:
+            if self.compressed>struct.pack('b',1):
                 bf.seek(bf.tell() - 1)
             #archive read
             self.archive.dec_archive(bf)
@@ -155,7 +155,7 @@ class Collection:
             
     def get_bytes(self):
         returenbyte = self.compressed
-        if struct.unpack('?',self.compressed):
+        if struct.unpack('?',self.compressed)[0]:
             if self.compressed>1:
                 returenbyte = []
             #archive read
@@ -169,15 +169,15 @@ class Collection:
         
 class Archive:
     def __init__(self):
-        self.archive_count = 0
+        self.archive_count = None
         self.unknown = None
         self.archlist = []       
         
     def dec_archive(self,bf):
         self.archive_count = bf.read(4)
         self.unknown = bf.read(2)
-        
-        for i in range(struct.unpack('i',self.archive_count)):
+
+        for i in range(struct.unpack('i',self.archive_count)[0]):
             self.archlist.append(SubArch())
             self.archlist[i].dec_subarch(bf)
             
@@ -205,23 +205,23 @@ class Loose:
         return
     def dec_loose(self,bf):
         self.FieldCount = bf.read(4) #int 4 byte
-        self.FieldCountUnfixed = struct.unpack('i',self.FieldCount)
+        self.FieldCountUnfixed = struct.unpack('i',self.FieldCount)[0]
         self.SizeFields = bf.read(4) #int
         self.SizeLookup = bf.read(4) #int
         self.Unknown = bf.read(1)
         
-        if (struct.unpack('i',self.FieldCount) > 0 and struct.unpack('i',self.SizeFields) <= 0):
+        if (struct.unpack('i',self.FieldCount)[0] > 0 and struct.unpack('i',self.SizeFields)[0] <= 0):
             curpos = bf.tell()
             bf.seek(curpos-13)
             self.FieldCount = bf.read(8)
-            self.FieldCountUnfixed = struct.unpack('i',self.FieldCount)
+            self.FieldCountUnfixed = struct.unpack('i',self.FieldCount)[0]
             self.SizeFields = bf.read(4)
             self.SizeLookup = bf.read(4)
             self.Unknown = bf.read(1)
             self.Is64 = True
             
         startpos = bf.tell()
-        expectedpos = startpos + struct.unpack('i',self.SizeFields)
+        expectedpos = startpos + struct.unpack('i',self.SizeFields)[0]
         
         for i in range(self.FieldCountUnfixed):
             curpos = bf.tell()
@@ -240,7 +240,7 @@ class Loose:
         if self.sizePadding > 0:
             self.padding = bf.read(self.sizePadding)
         
-        self.Lookup = Lookup(struct.unpack('i',self.SizeLookup))
+        self.Lookup = Lookup(struct.unpack('i',self.SizeLookup)[0])
         self.Lookup.dec_Lookup(bf)
 
         return
@@ -264,21 +264,21 @@ class SubArch:
     def dec_subarch(self, bf):
         self.StartAndEndFileID = bf.read(16)
         self.SizeCompressed = bf.read(2)
-        self.DataCompressed = bf.read(struct.unpack('h',self.SizeCompressed))  
+        self.DataCompressed = bf.read(struct.unpack('h',self.SizeCompressed)[0])  
         self.SizeDecompressed = bf.read(2)
         
-        if struct.unpack('h',self.SizeCompressed) < 0:
+        if struct.unpack('h',self.SizeCompressed)[0] < 0:
             print('sub archaive sizcompressed check')
             
-        self.DataDecompressed = bf.read(struct.unpack('h',self.SizeDecompressed))
+        self.DataDecompressed = bf.read(struct.unpack('h',self.SizeDecompressed)[0])
         self.FieldLookupCount = bf.read(4)
         self.Field = FieldTable()
         self.Lookup = Lookup()
         
         mbf = BytesIO(self.DataDecompressed)
         self.DataOffset = bf.read(2)
-        for i in range(1,struct.unpack('i',self.FieldLookupCount)):
-            mbf.seek(struct.unpack('h',self.DataOffset))
+        for i in range(1,struct.unpack('i',self.FieldLookupCount)[0]):
+            mbf.seek(struct.unpack('h',self.DataOffset)[0])
             
             self.Field.append(FieldTable())
             self.Field.dec_FieldTable(mbf)
@@ -293,7 +293,7 @@ class FieldTable:
     def dec_FieldTable(self,br):
         return
 class Lookup:
-    def __init__(self):
+    def __init__(self,Size=0):
         return
     def dec_Lookup(self,bf):
         return
