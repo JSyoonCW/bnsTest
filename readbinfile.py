@@ -222,11 +222,13 @@ class Loose:
             
         startpos = bf.tell()
         expectedpos = startpos + struct.unpack('i',self.SizeFields)[0]
-        
+        print(struct.unpack('i',self.SizeFields))
+        print(expectedpos)
         for i in range(self.FieldCountUnfixed):
             curpos = bf.tell()
             if curpos >= expectedpos:
                 self.FieldCount = struct.pack('i',i)
+                print(self.FieldCount)
                 bf.seek(expectedpos)
                 break
             self.Fields.append(FieldTable())
@@ -239,12 +241,20 @@ class Loose:
             return
         if self.sizePadding > 0:
             self.padding = bf.read(self.sizePadding)
+            print(self.padding)
         
         self.Lookup = Lookup(struct.unpack('i',self.SizeLookup)[0])
         self.Lookup.dec_Lookup(bf)
 
         return
     def get_bytes(self):
+        return_bytes = []
+        return_bytes += self.FieldCount
+        return_bytes += self.SizeFields
+        return_bytes += self.SizeLookup
+        return_bytes += self.Unknown
+        #return_bytes += self.
+        #todo
         return
 
 class SubArch:
@@ -255,7 +265,7 @@ class SubArch:
         self.SizeDecompressed = None #2byte
         self.DataDecompressed = None
         self.FieldLookupCount = None #4byte
-        self.DataOffset = None
+        self.DataOffset = []
         
         #class list
         self.Field = []
@@ -272,16 +282,22 @@ class SubArch:
             
         self.DataDecompressed = bf.read(struct.unpack('h',self.SizeDecompressed)[0])
         self.FieldLookupCount = bf.read(4)
-        self.Field = FieldTable()
-        self.Lookup = Lookup()
         
         mbf = BytesIO(self.DataDecompressed)
-        self.DataOffset = bf.read(2)
-        for i in range(1,struct.unpack('i',self.FieldLookupCount)[0]):
-            mbf.seek(struct.unpack('h',self.DataOffset)[0])
+        self.DataOffset.append(bf.read(2))
+        for i in range(0,struct.unpack('i',self.FieldLookupCount)[0]):
+            mbf.seek(struct.unpack('h',self.DataOffset[i-1])[0])
             
             self.Field.append(FieldTable())
             self.Field.dec_FieldTable(mbf)
+            
+            if (i < struct.unpack('i',self.FieldLookupCount)[0]):
+                self.DataOffset.append(bf.read(2))
+            else:
+                self.DataOffset.append(self.SizeDecompressed)
+                
+            self.Lookup.append(Lookup())
+            self.Lookup[]
             #Todo
         return
     def get_bytes(self):
